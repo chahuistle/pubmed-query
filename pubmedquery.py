@@ -10,15 +10,17 @@ from datetime import date, timedelta
 
 # useful constants
 DATE_FROM = date(2000, 1, 1)
+#DATE_FROM = date(2009, 1, 1)
 DATE_UNTIL = date(2018, 12, 31)
 ALL_KEYWORDS = ["genomics", "lipidomics", "proteomics", "glycomics", "transcriptomics", "metabolomics", "epigenomics", "metagenomics", "phosphoproteomics"]
 DATE_FORMAT = "%Y/%m/%d"
-QUERY_WINDOW_SIZE = 1100.0
-MAX_QUERIES_PER_WINDOW = 8
+# we want to send, at most, 8 queries per second,
+# this is one query every 125ms
+MIN_TIME_BETWEEN_QUERIES = 110.0
+
 
 # global variables
 time_last_query = -1
-n_window_queries = 0
 
 # returns a pubmed url
 def build_query_url(api_key, keywords, date_from, date_until):
@@ -32,27 +34,28 @@ def query_pubmed(url):
     # In order not to overload the E-utility servers, NCBI recommends that users post no more 
     # than three URL requests per second and limit large jobs to either weekends or between 9:00 PM and 5:00 AM Eastern time during weekdays. 
     global time_last_query
-    global n_window_queries
-    current_time = current_milli_time()
     # new window started, query away!
-    if (current_time - time_last_query) > QUERY_WINDOW_SIZE:
-        n_window_queries = 0
-    if n_window_queries >= MAX_QUERIES_PER_WINDOW:
-        # wait one whole window to be on the safe side (also, just be lazy, I guess)
-        print("#Doing it like Verizon...")
-        time.sleep(QUERY_WINDOW_SIZE / 1000.0)
-        n_window_queries = 0
+    #time_since_last_query = current_milli_time() - time_last_query
+    #if time_since_last_query < MIN_TIME_BETWEEN_QUERIES:
+    #    print("#Doing it like Verizon...")
+    #    time.sleep((MIN_TIME_BETWEEN_QUERIES - time_since_last_query) / 1000.0)
     print("#url=%s" % url)
-    raw_response = requests.get(url).text
-    #print("Querying using %s" % url)
-    #raw_response = "<?xml version=\"1.0\" encoding=\"UTF-8\" ?><!DOCTYPE eSearchResult PUBLIC \"-//NLM//DTD esearch 20060628//EN\" \"https://eutils.ncbi.nlm.nih.gov/eutils/dtd/20060628/esearch.dtd\"><eSearchResult><Count>15</Count><RetMax>15</RetMax><RetStart>0</RetStart><IdList><Id>12465651</Id><Id>12159840</Id><Id>11701847</Id><Id>11262879</Id><Id>11187813</Id><Id>10755918</Id><Id>11130686</Id><Id>23105267</Id><Id>10778367</Id><Id>10766612</Id><Id>10746694</Id><Id>10746688</Id><Id>10659812</Id><Id>10646564</Id><Id>10639503</Id></IdList><TranslationSet/><TranslationStack>   <TermSet>    <Term>2000/01/01[PDAT]</Term>    <Field>PDAT</Field>    <Count>0</Count>    <Explode>N</Explode>   </TermSet>   <TermSet>    <Term>2000/12/31[PDAT]</Term>    <Field>PDAT</Field>    <Count>0</Count>    <Explode>N</Explode>   </TermSet>   <OP>RANGE</OP>   <TermSet>    <Term>genomics[Other Term]</Term>    <Field>Other Term</Field>    <Count>7402</Count>    <Explode>N</Explode>   </TermSet>   <OP>AND</OP>  </TranslationStack><QueryTranslation>2000/01/01[PDAT] : 2000/12/31[PDAT] AND genomics[Other Term]</QueryTranslation></eSearchResult>"
-    time_last_query = current_milli_time()
-    n_window_queries += 1
-    xml_response = ET.fromstring(raw_response)
-    # do some sanity check
-    if int(xml_response.findall(".//Count")[0].text) > int(xml_response.findall(".//RetMax")[0].text):
-        print("Query returned more results than expected!!! %s" % url)
-    return [study_id.text.strip() for study_id in xml_response.findall(".//IdList/Id")]
+    #time_last_query = current_milli_time()
+    while True:
+        try:
+            time.sleep(MIN_TIME_BETWEEN_QUERIES / 1000.0)
+            raw_response = requests.get(url).text
+            #print("Querying using %s" % url)
+            #raw_response = "<?xml version=\"1.0\" encoding=\"UTF-8\" ?><!DOCTYPE eSearchResult PUBLIC \"-//NLM//DTD esearch 20060628//EN\" \"https://eutils.ncbi.nlm.nih.gov/eutils/dtd/20060628/esearch.dtd\"><eSearchResult><Count>15</Count><RetMax>15</RetMax><RetStart>0</RetStart><IdList><Id>12465651</Id><Id>12159840</Id><Id>11701847</Id><Id>11262879</Id><Id>11187813</Id><Id>10755918</Id><Id>11130686</Id><Id>23105267</Id><Id>10778367</Id><Id>10766612</Id><Id>10746694</Id><Id>10746688</Id><Id>10659812</Id><Id>10646564</Id><Id>10639503</Id></IdList><TranslationSet/><TranslationStack>   <TermSet>    <Term>2000/01/01[PDAT]</Term>    <Field>PDAT</Field>    <Count>0</Count>    <Explode>N</Explode>   </TermSet>   <TermSet>    <Term>2000/12/31[PDAT]</Term>    <Field>PDAT</Field>    <Count>0</Count>    <Explode>N</Explode>   </TermSet>   <OP>RANGE</OP>   <TermSet>    <Term>genomics[Other Term]</Term>    <Field>Other Term</Field>    <Count>7402</Count>    <Explode>N</Explode>   </TermSet>   <OP>AND</OP>  </TranslationStack><QueryTranslation>2000/01/01[PDAT] : 2000/12/31[PDAT] AND genomics[Other Term]</QueryTranslation></eSearchResult>" 
+            xml_response = ET.fromstring(raw_response)
+            # do some sanity check
+            if int(xml_response.findall(".//Count")[0].text) > int(xml_response.findall(".//RetMax")[0].text):
+                raise ValueError("Query returned more results than expected!!! %s" % url)
+            return [study_id.text.strip() for study_id in xml_response.findall(".//IdList/Id")]
+        except:
+            print("#ERROR retrieving %s, retrying in one second..." % url)
+            time.sleep(1000.0)
+
 
 def current_milli_time(): 
     return int(round(time.time() * 1000))
@@ -84,12 +87,38 @@ def do_all_queries(api_key):
         # increment date to next year
         current_date_from = date(current_date_from.year + 1, 1, 1)
 
+def parse_results(results_filepath):
+    # parsed results are a map, keys are years and values is a list:
+    # year -> [2-layer, 3-layer, 3+-layer, total]
+    with open(results_filepath) as f:
+        results = {}
+        for line in f.readlines():
+            line = line.strip()
+            if line[0] != '#':
+                # Keywords=genomics,proteomics,transcriptomics,metabolomics,metagenomics; From=2004/01/01; To=2004/12/31; IDs=1,2,3
+                fields = line.split(';')
+                n_layers = len(fields[0].split('=')[1].split(','))
+                year = int(fields[1][len('From='):len('From=')+3])
+                ids = fields[3].split('=')[1].split(',')
+                index = min(n_layers - 2, 2)
+                if year in results:
+                    
+                else:
+                    results[year] = [set(), set(), set(), 0]                    
+                    results[year][index].update(ids) 
+
+
+
 def main():
-    parser = argparse.ArgumentParser(description='Query PubMed.')
+    parser = argparse.ArgumentParser(description='Query ubMed.')
     parser.add_argument('--api-key', metavar='api_key', type=str, help='API Key')
+    parser.add_argument('--parse-results', metavar='parse_results', type=str, default=None, help='File from which results will be parsed')
     args = parser.parse_args()
-    print("#Using API key %s" % args.api_key)
-    do_all_queries(args.api_key)
+    
+    if args.parse_results is None:
+        do_all_queries(args.api_key)
+    else:
+        parse_results(args.parse_results)
 
 if __name__ == '__main__':
     main()
