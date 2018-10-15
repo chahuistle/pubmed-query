@@ -114,9 +114,9 @@ def parse_results(results_filepath):
                 for study_id in fields[index_upper_layer]:
                     fields[index_lower_layer].discard(study_id)
     # generate total number of studies
-    print("Year; 2-omics; 3-omics; >3-omics; Total")
+    print("#Year,2-omics,3-omics,>3-omics,Total")
     for year, fields in results.items():
-        print("%d; %d; %d; %d; %d" % (year, len(fields[0]), len(fields[1]), len(fields[2]), len(fields[0]) + len(fields[1]) + len(fields[2])))
+        print("%d,%d,%d,%d,%d" % (year, len(fields[0]), len(fields[1]), len(fields[2]), len(fields[0]) + len(fields[1]) + len(fields[2])))
 
 
 def main():
