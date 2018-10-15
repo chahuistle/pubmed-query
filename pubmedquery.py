@@ -9,7 +9,6 @@ import itertools, requests, time, argparse
 from datetime import date, timedelta
 
 # useful constants
-DATE_FROM = date(2000, 1, 1)
 #DATE_FROM = date(2009, 1, 1)
 DATE_UNTIL = date(2018, 12, 31)
 ALL_KEYWORDS = ["genomics", "lipidomics", "proteomics", "glycomics", "transcriptomics", "metabolomics", "epigenomics", "metagenomics", "phosphoproteomics"]
@@ -67,10 +66,10 @@ def get_keyword_combinations(all_keywords):
         keywords.extend(itertools.combinations(all_keywords, i))
     return keywords
 
-def do_all_queries(api_key):
+def do_all_queries(api_key, start_year):
     keyword_combinations = get_keyword_combinations(ALL_KEYWORDS)
     # go through the years, query
-    current_date_from = DATE_FROM
+    current_date_from = date(start_year, 1, 1)
     while current_date_from < DATE_UNTIL:
         # date until the end of the year 
         current_date_until = date(current_date_from.year + 1, 1, 1) - timedelta(days=1)
@@ -89,34 +88,46 @@ def do_all_queries(api_key):
 
 def parse_results(results_filepath):
     # parsed results are a map, keys are years and values is a list:
-    # year -> [2-layer, 3-layer, 3+-layer, total]
-    with open(results_filepath) as f:
-        results = {}
+    # year -> [2-layer, 3-layer, 3+-layer]
+    results = {}
+    with open(results_filepath) as f:        
         for line in f.readlines():
             line = line.strip()
             if line[0] != '#':
                 # Keywords=genomics,proteomics,transcriptomics,metabolomics,metagenomics; From=2004/01/01; To=2004/12/31; IDs=1,2,3
-                fields = line.split(';')
+                fields = [field.strip() for field in line.split(';')]
                 n_layers = len(fields[0].split('=')[1].split(','))
-                year = int(fields[1][len('From='):len('From=')+3])
+                year = int(fields[1][len('From='):len('From=')+4])
                 ids = fields[3].split('=')[1].split(',')
                 index = min(n_layers - 2, 2)
-                if year in results:
-                    
-                else:
-                    results[year] = [set(), set(), set(), 0]                    
-                    results[year][index].update(ids) 
-
+                if not year in results:
+                    results[year] = [set(), set(), set()]
+                # warning: 'IDs='.split('=')[1].split(',') == [''] is True
+                if len(ids) > 0 and len(ids[0]) > 0:     
+                    results[year][index].update(ids)
+    # clean results 
+    for year, fields in results.items():
+        for index_upper_layer in range(2, -1, -1):
+            # look for ids in upper indices (the higher the index, the more layered is the study)
+            # and remove them from lower lyers
+            for index_lower_layer in range(index_upper_layer):
+                for study_id in fields[index_upper_layer]:
+                    fields[index_lower_layer].discard(study_id)
+    # generate total number of studies
+    print("Year; 2-omics; 3-omics; >3-omics; Total")
+    for year, fields in results.items():
+        print("%d; %d; %d; %d; %d" % (year, len(fields[0]), len(fields[1]), len(fields[2]), len(fields[0]) + len(fields[1]) + len(fields[2])))
 
 
 def main():
     parser = argparse.ArgumentParser(description='Query ubMed.')
     parser.add_argument('--api-key', metavar='api_key', type=str, help='API Key')
     parser.add_argument('--parse-results', metavar='parse_results', type=str, default=None, help='File from which results will be parsed')
+    parser.add_argument('--start-year', metavar='start_year', type=int, default=2000, help='Year of first query')
     args = parser.parse_args()
     
     if args.parse_results is None:
-        do_all_queries(args.api_key)
+        do_all_queries(args.api_key, args.start_year)
     else:
         parse_results(args.parse_results)
 
